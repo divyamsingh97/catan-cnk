@@ -45,11 +45,11 @@ service cloud.firestore {
     match /games/{gameId} {
       function isMember() {
         return isAllowlisted() &&
-          request.auth.uid in resource.data.playerIds;
+          request.auth.uid in resource.data.order;
       }
       function joiningSelf() {
         return isAllowlisted() &&
-          request.auth.uid in request.resource.data.playerIds;
+          request.auth.uid in request.resource.data.order;
       }
 
       // Anyone allowlisted can list/open games (to browse the lobby) and
