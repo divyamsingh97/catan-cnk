@@ -1,6 +1,6 @@
 import { initializeApp, type FirebaseApp } from "firebase/app";
 import { getAuth, type Auth } from "firebase/auth";
-import { getFirestore, type Firestore } from "firebase/firestore";
+import { initializeFirestore, type Firestore } from "firebase/firestore";
 
 /**
  * Firebase web config. These values are injected at build time from Vite env
@@ -28,7 +28,9 @@ let dbInstance: Firestore | undefined;
 if (isFirebaseConfigured) {
   app = initializeApp(firebaseConfig);
   authInstance = getAuth(app);
-  dbInstance = getFirestore(app);
+  // ignoreUndefinedProperties lets us store game state with optional fields
+  // (e.g. a desert hex has no `number`) without Firestore rejecting `undefined`.
+  dbInstance = initializeFirestore(app, { ignoreUndefinedProperties: true });
 }
 
 /** Throws a clear error if Firebase env vars are missing. */
