@@ -1,0 +1,31 @@
+{
+  "name": "catan-cnk",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Private online Cities & Knights game for a group of friends. Frontend on GitHub Pages, Firebase backend.",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "build:app": "tsc --noEmit && cross-env VITE_BASE=./ vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "icons": "node scripts/gen-icons.mjs",
+    "cap:sync": "npm run build:app && cap sync android",
+    "cap:open": "cap open android",
+    "apk": "npm run build:app && cap sync android && cd android && gradlew.bat assembleDebug"
+  },
+  "dependencies": {
+    "@capacitor-firebase/authentication": "^6.3.1",
+    "@capacitor/android": "^6.2.1",
+    "@capacitor/cli": "^6.2.1",
+    "@capacitor/core": "^6.2.1",
+    "firebase": "^11.1.0"
+  },
+  "devDependencies": {
+    "cross-env": "^10.1.0",
+    "sharp": "^0.33.5",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.5"
+  }
+}

@@ -1,0 +1,69 @@
+rules_version = '2';
+
+// Firestore Security Rules for the private Catan: Cities & Knights app.
+// Deploy these in the Firebase console (Firestore -> Rules) or via the CLI.
+//
+// Model:
+//   players/{uid}            -> one doc per signed-in friend (their profile)
+//   games/{gameId}           -> lobby + full game state
+//   games/{gameId}/log/{id}  -> append-only action log (optional history)
+//
+// Security goals:
+//   * Only signed-in users on the allowlist can read/write.
+//   * A player can only edit their own profile.
+//   * Only players who are members of a game can read/write that game.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---- Allowlist of friend emails -------------------------------------
+    // Edit this list to match your group (lowercased Google emails).
+    function allowedEmails() {
+      return [
+        // 'friend1@gmail.com',
+        // 'friend2@gmail.com'
+      ];
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAllowlisted() {
+      return isSignedIn() &&
+        (allowedEmails().size() == 0 ||
+         allowedEmails().hasAny([request.auth.token.email.lower()]));
+    }
+
+    // ---- Player profiles -------------------------------------------------
+    match /players/{uid} {
+      allow read: if isAllowlisted();
+      allow write: if isAllowlisted() && request.auth.uid == uid;
+    }
+
+    // ---- Games -----------------------------------------------------------
+    match /games/{gameId} {
+      function isMember() {
+        return isAllowlisted() &&
+          request.auth.uid in resource.data.playerIds;
+      }
+      function joiningSelf() {
+        return isAllowlisted() &&
+          request.auth.uid in request.resource.data.playerIds;
+      }
+
+      // Anyone allowlisted can list/open games (to browse the lobby) and
+      // members (or someone joining) can write.
+      allow read: if isAllowlisted();
+      allow create: if joiningSelf();
+      allow update: if isMember() || joiningSelf();
+      allow delete: if isMember();
+
+      match /log/{entryId} {
+        allow read: if isAllowlisted();
+        allow create: if isAllowlisted();
+        allow update, delete: if false; // append-only
+      }
+    }
+  }
+}
