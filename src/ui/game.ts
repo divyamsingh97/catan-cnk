@@ -1,5 +1,5 @@
 import type { Profile } from "../firebase/auth";
-import { saveGame, watchGame, type Unsubscribe } from "../firebase/games";
+import { saveGame, startGame, watchGame, type Unsubscribe } from "../firebase/games";
 import { applyAction, RuleError, type Action, type ProgressParams } from "../game/engine";
 import { improvementCost, type CostBag } from "../game/constants";
 import {
@@ -435,13 +435,64 @@ export function gameScreen(
   };
 
   const renderWaiting = (g: GameState) => {
+    const isHost = g.createdBy === me.uid;
+    const names = g.order.map((u) => g.players[u].name);
+    const enough = g.order.length >= 2;
+
+    const body: HTMLElement[] = [
+      el("h2", {}, [g.name]),
+      el("div", { class: "muted" }, [`${g.order.length} / 4 players seated`]),
+      el("div", {}, [names.join(", ")])
+    ];
+
+    if (isHost) {
+      const timerSelect = el("select", { title: "Time limit per turn" }, [
+        el("option", { value: "30" }, ["30s / turn"]),
+        el("option", { value: "90", selected: "" }, ["1.5 min / turn"]),
+        el("option", { value: "150" }, ["2.5 min / turn"])
+      ]) as HTMLSelectElement;
+
+      const startBtn = el(
+        "button",
+        {
+          class: "primary",
+          disabled: !enough,
+          onclick: async () => {
+            startBtn.disabled = true;
+            try {
+              await startGame(gameId, Number(timerSelect.value));
+              // watchGame will re-render to the board once phase flips to "play".
+            } catch (e) {
+              errorMsg = e instanceof Error ? e.message : String(e);
+              startBtn.disabled = false;
+              render(current);
+            }
+          }
+        },
+        ["Start game"]
+      );
+
+      body.push(
+        el("div", { class: "row", style: "justify-content:center;gap:8px;margin-top:8px" }, [
+          timerSelect,
+          startBtn
+        ])
+      );
+      body.push(
+        el("div", { class: "muted", style: "font-size:.85rem;max-width:340px" }, [
+          enough
+            ? "You're the host — pick a turn timer and start when everyone's in."
+            : "Need at least 2 players. Share the game link so a friend can sign in and join from the lobby."
+        ])
+      );
+      if (errorMsg) body.push(el("div", { class: "error" }, [errorMsg]));
+    } else {
+      body.push(el("div", { class: "muted" }, ["Waiting for the host to start…"]));
+    }
+
     mount(
       boardWrap,
-      el("div", { class: "col", style: "margin:auto;text-align:center;gap:8px" }, [
-        el("h2", {}, [g.name]),
-        el("div", { class: "muted" }, ["Waiting for the host to start…"]),
-        el("div", {}, [g.order.map((u) => g.players[u].name).join(", ")])
-      ])
+      el("div", { class: "col", style: "margin:auto;text-align:center;gap:8px" }, body)
     );
     mount(sidebar, el("button", { onclick: back }, ["Back to lobby"]));
   };

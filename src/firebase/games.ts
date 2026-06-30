@@ -101,7 +101,7 @@ export async function startGame(gameId: string, turnTimer = 0): Promise<void> {
   const snap = await getDoc(ref);
   if (!snap.exists()) throw new Error("Game no longer exists.");
   const g = snap.data() as GameState;
-  if (g.order.length < 3) throw new Error("Need at least 3 players for C&K.");
+  if (g.order.length < 2) throw new Error("Need at least 2 players to start.");
   const state = createGameState({
     id: gameId,
     name: g.name,

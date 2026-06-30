@@ -102,7 +102,7 @@ function gameRow(
             "button",
             {
               class: "primary",
-              disabled: g.playerIds.length < 3,
+              disabled: g.playerIds.length < 2,
               onclick: async () => {
                 try {
                   await startGame(g.id, Number(timerSelect.value));
