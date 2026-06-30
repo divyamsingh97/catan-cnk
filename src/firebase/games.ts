@@ -19,6 +19,25 @@ import type { GameState, LobbyGame } from "../game/types";
 
 const MAX_PLAYERS = 4; // C&K is 3-4 players per board; multiple games can run.
 
+/**
+ * Recursively strips `undefined` values from an object/array tree. Firestore
+ * rejects any `undefined` field (e.g. a desert hex has no `number`), so we
+ * clean the payload before writing. Returns a plain JSON-safe structure.
+ */
+function pruneUndefined<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return value.map((v) => pruneUndefined(v)) as unknown as T;
+  }
+  if (value && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      if (v !== undefined) out[k] = pruneUndefined(v);
+    }
+    return out as T;
+  }
+  return value;
+}
+
 /** Live-subscribe to the list of joinable / active games. */
 export function watchLobby(cb: (games: LobbyGame[]) => void): Unsubscribe {
   const q = query(collection(db(), "games"), orderBy("createdAt", "desc"));
@@ -109,7 +128,7 @@ export async function startGame(gameId: string, turnTimer = 0): Promise<void> {
     players: g.order.map((uid) => ({ uid, name: g.players[uid].name })),
     turnTimer
   });
-  await setDoc(ref, state);
+  await setDoc(ref, pruneUndefined(state));
 }
 
 /** Live-subscribe to a single game's full state. */
@@ -121,10 +140,10 @@ export function watchGame(gameId: string, cb: (g: GameState | null) => void): Un
 
 /** Persists a new full game state (optimistic: bumps version). */
 export async function saveGame(state: GameState): Promise<void> {
-  await setDoc(doc(db(), "games", state.id), {
+  await setDoc(doc(db(), "games", state.id), pruneUndefined({
     ...state,
     version: state.version + 1
-  });
+  }));
 }
 
 export { MAX_PLAYERS };
