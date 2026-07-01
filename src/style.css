@@ -292,13 +292,13 @@ a {
   fill: var(--danger);
 }
 .token-bg {
-  fill: #f2e4c2;
+  fill: #f7eccf;
   stroke: #00000033;
 }
-.hex-label {
-  fill: #ffffffcc;
-  font-size: 9px;
+.hex-icon {
+  font-size: 30px;
   text-anchor: middle;
   dominant-baseline: central;
   pointer-events: none;
+  opacity: 0.92;
 }

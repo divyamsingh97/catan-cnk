@@ -1,16 +1,43 @@
 import { hexCorners, hexToPixel } from "../game/hex";
-import { TERRAIN_RESOURCE, type GameState, type Hex } from "../game/types";
+import { type GameState, type Hex } from "../game/types";
 
 const NS = "http://www.w3.org/2000/svg";
 
-const TERRAIN_FILL: Record<string, string> = {
-  forest: "#2f8f4e",
-  hills: "#c45a3a",
-  fields: "#e7c24a",
-  pasture: "#8fd14f",
-  mountains: "#7d8aa0",
-  desert: "#d8c08a",
-  sea: "#15355f"
+/** Base terrain colours as [light, dark] pairs used to build a soft radial
+ *  gradient per tile, giving each hex a subtle hand-painted depth. */
+const TERRAIN_GRADIENT: Record<string, [string, string]> = {
+  forest: ["#3aa55f", "#256b3b"],
+  hills: ["#d06a44", "#a8441f"],
+  fields: ["#f2d15c", "#d3a72f"],
+  pasture: ["#a6e05f", "#6fb43a"],
+  mountains: ["#98a5bb", "#6b788f"],
+  desert: ["#ecd9a6", "#cdb075"],
+  sea: ["#1c4a86", "#0e2a51"]
+};
+
+/** A single emoji glyph drawn as a watermark on each land tile. Original art,
+ *  no external assets, crisp on mobile. */
+const TERRAIN_ICON: Record<string, string> = {
+  forest: "\uD83C\uDF32", // pine tree
+  hills: "\uD83E\uDDF1", // brick
+  fields: "\uD83C\uDF3E", // sheaf of rice
+  pasture: "\uD83D\uDC11", // ram
+  mountains: "\u26F0\uFE0F", // mountain
+  desert: "\uD83C\uDFDC\uFE0F" // desert
+};
+
+/** Number of probability pips shown under a token (dots = ways to roll it). */
+const PIP_COUNT: Record<number, number> = {
+  2: 1,
+  3: 2,
+  4: 3,
+  5: 4,
+  6: 5,
+  8: 5,
+  9: 4,
+  10: 3,
+  11: 2,
+  12: 1
 };
 
 const COLOR_FILL: Record<string, string> = {
@@ -45,6 +72,9 @@ export function renderBoard(g: GameState, cb: BoardCallbacks = {}): SVGSVGElemen
   const h = Math.max(...ys) - minY + pad;
   svg.setAttribute("viewBox", `${minX} ${minY} ${w} ${h}`);
   svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
+
+  // ---- Gradients + filters (defined once) ----
+  svg.appendChild(buildDefs());
 
   // ---- Hex tiles ----
   for (const hex of Object.values(g.hexes)) {
@@ -106,6 +136,45 @@ export function renderBoard(g: GameState, cb: BoardCallbacks = {}): SVGSVGElemen
   return svg as SVGSVGElement;
 }
 
+/** Builds the <defs> block with one radial gradient per terrain plus a soft
+ *  drop shadow used by the number tokens. */
+function buildDefs(): SVGDefsElement {
+  const defs = document.createElementNS(NS, "defs");
+
+  for (const terrain of Object.keys(TERRAIN_GRADIENT)) {
+    const [light, dark] = TERRAIN_GRADIENT[terrain];
+    const grad = document.createElementNS(NS, "radialGradient");
+    grad.setAttribute("id", `g-${terrain}`);
+    grad.setAttribute("cx", "50%");
+    grad.setAttribute("cy", "36%");
+    grad.setAttribute("r", "78%");
+    const s1 = document.createElementNS(NS, "stop");
+    s1.setAttribute("offset", "0%");
+    s1.setAttribute("stop-color", light);
+    const s2 = document.createElementNS(NS, "stop");
+    s2.setAttribute("offset", "100%");
+    s2.setAttribute("stop-color", dark);
+    grad.append(s1, s2);
+    defs.appendChild(grad);
+  }
+
+  const filter = document.createElementNS(NS, "filter");
+  filter.setAttribute("id", "tokenShadow");
+  filter.setAttribute("x", "-40%");
+  filter.setAttribute("y", "-40%");
+  filter.setAttribute("width", "180%");
+  filter.setAttribute("height", "180%");
+  const shadow = document.createElementNS(NS, "feDropShadow");
+  shadow.setAttribute("dx", "0");
+  shadow.setAttribute("dy", "1");
+  shadow.setAttribute("stdDeviation", "1.2");
+  shadow.setAttribute("flood-color", "#00000055");
+  filter.appendChild(shadow);
+  defs.appendChild(filter);
+
+  return defs;
+}
+
 function drawHex(
   svg: SVGSVGElement,
   hex: Hex,
@@ -115,55 +184,86 @@ function drawHex(
   const corners = hexCorners(center);
   const poly = document.createElementNS(NS, "polygon");
   poly.setAttribute("points", corners.map((p) => `${p.x},${p.y}`).join(" "));
-  poly.setAttribute("fill", TERRAIN_FILL[hex.terrain] ?? "#333");
-  poly.setAttribute("stroke", "#0c1a30");
+  poly.setAttribute("fill", `url(#g-${hex.terrain})`);
+  poly.setAttribute("stroke", hex.terrain === "sea" ? "#0a2547" : "#0c1a30");
   poly.setAttribute("stroke-width", "3");
+  poly.setAttribute("stroke-linejoin", "round");
   if (cb.onHexClick) {
     poly.style.cursor = "pointer";
     poly.addEventListener("click", () => cb.onHexClick!(hex.id));
   }
   svg.appendChild(poly);
 
-  // Number token
+  // Resource icon watermark (land tiles only)
+  const icon = TERRAIN_ICON[hex.terrain];
+  if (icon) {
+    const glyph = document.createElementNS(NS, "text");
+    glyph.setAttribute("x", String(center.x));
+    glyph.setAttribute("y", String(hex.number !== undefined ? center.y - 12 : center.y));
+    glyph.setAttribute("class", "hex-icon");
+    glyph.textContent = icon;
+    svg.appendChild(glyph);
+  }
+
+  // Number token with probability pips
   if (hex.number !== undefined) {
+    const cy = center.y + 16;
+    const red = hex.number === 6 || hex.number === 8;
+
     const bg = document.createElementNS(NS, "circle");
     bg.setAttribute("cx", String(center.x));
-    bg.setAttribute("cy", String(center.y));
-    bg.setAttribute("r", "16");
+    bg.setAttribute("cy", String(cy));
+    bg.setAttribute("r", "17");
     bg.setAttribute("class", "token-bg");
+    bg.setAttribute("filter", "url(#tokenShadow)");
     svg.appendChild(bg);
 
     const t = document.createElementNS(NS, "text");
     t.setAttribute("x", String(center.x));
-    t.setAttribute("y", String(center.y));
+    t.setAttribute("y", String(cy - 3));
     t.setAttribute("font-size", "16");
-    const red = hex.number === 6 || hex.number === 8;
     t.setAttribute("class", red ? "hex-number red" : "hex-number");
     t.textContent = String(hex.number);
     svg.appendChild(t);
+
+    const pips = PIP_COUNT[hex.number] ?? 0;
+    if (pips > 0) {
+      const gap = 4;
+      const startX = center.x - ((pips - 1) * gap) / 2;
+      for (let i = 0; i < pips; i++) {
+        const pip = document.createElementNS(NS, "circle");
+        pip.setAttribute("cx", String(startX + i * gap));
+        pip.setAttribute("cy", String(cy + 8));
+        pip.setAttribute("r", "1.6");
+        pip.setAttribute("fill", red ? "#c0392b" : "#3a2a12");
+        svg.appendChild(pip);
+      }
+    }
   }
 
-  // Resource label (small)
-  const res = TERRAIN_RESOURCE[hex.terrain];
-  if (res) {
-    const lbl = document.createElementNS(NS, "text");
-    lbl.setAttribute("x", String(center.x));
-    lbl.setAttribute("y", String(center.y + 30));
-    lbl.setAttribute("class", "hex-label");
-    lbl.textContent = res;
-    svg.appendChild(lbl);
-  }
-
-  // Robber
+  // Robber pawn
   if (hex.robber) {
-    const r = document.createElementNS(NS, "circle");
-    r.setAttribute("cx", String(center.x));
-    r.setAttribute("cy", String(center.y));
-    r.setAttribute("r", "12");
-    r.setAttribute("fill", "#111");
-    r.setAttribute("stroke", "#000");
-    r.setAttribute("opacity", "0.8");
-    svg.appendChild(r);
+    const pawn = document.createElementNS(NS, "g");
+    const bx = center.x;
+    const by = hex.number !== undefined ? center.y - 10 : center.y;
+    const head = document.createElementNS(NS, "circle");
+    head.setAttribute("cx", String(bx));
+    head.setAttribute("cy", String(by - 7));
+    head.setAttribute("r", "5");
+    head.setAttribute("fill", "#1a1a1a");
+    head.setAttribute("stroke", "#ffffffaa");
+    head.setAttribute("stroke-width", "1.2");
+    const body = document.createElementNS(NS, "path");
+    body.setAttribute(
+      "d",
+      `M ${bx - 8} ${by + 9} Q ${bx - 8} ${by - 1} ${bx} ${by - 2} Q ${bx + 8} ${by - 1} ${bx + 8} ${by + 9} Z`
+    );
+    body.setAttribute("fill", "#1a1a1a");
+    body.setAttribute("stroke", "#ffffffaa");
+    body.setAttribute("stroke-width", "1.2");
+    body.setAttribute("stroke-linejoin", "round");
+    pawn.append(body, head);
+    svg.appendChild(pawn);
   }
 }
 
