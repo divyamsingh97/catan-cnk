@@ -350,6 +350,13 @@ export interface GameState {
     responses: Record<string, "accept" | "reject">;
   };
 
+  /** Cumulative count of each dice sum (2..12) rolled this game. Drives the
+   *  self-balancing dice so totals track the real 2d6 bell curve. */
+  rollCounts?: Record<number, number>;
+  /** Cumulative resource+commodity units produced per uid, used to nudge the
+   *  balanced dice toward fairness across players' hex placements. */
+  productionTally?: Record<string, number>;
+
   /** Monotonic version for optimistic concurrency / change detection. */
   version: number;
   /** Human-readable recent events for the side log. */

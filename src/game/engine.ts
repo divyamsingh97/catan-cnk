@@ -293,14 +293,92 @@ function advanceSetup(g: GameState): void {
 // Rolling dice, production & the event die
 // ---------------------------------------------------------------------------
 
-function d6(): number {
-  return 1 + Math.floor(Math.random() * 6);
-}
+/** Real 2d6 sum frequencies out of 36 (the target bell curve). */
+const SUM_FREQ: Record<number, number> = {
+  2: 1, 3: 2, 4: 3, 5: 4, 6: 5, 7: 6, 8: 5, 9: 4, 10: 3, 11: 2, 12: 1
+};
+const SUM_TOTAL = 36;
+const BELL_K = 1.8; // pull cumulative counts toward the bell curve
+const FAIR_K = 0.6; // favour under-producing players a little
 
 function rollEventDie(): EventDie {
   // 3 ship faces, 1 each of trade/politics/science.
   const faces: EventDie[] = ["ship", "ship", "ship", "trade", "politics", "science"];
   return faces[Math.floor(Math.random() * 6)];
+}
+
+/** Which uids benefit (and how much) if `sum` is rolled, from current board
+ *  placements — settlement = 1, city = 2 per adjacent producing hex. */
+function benefitBySum(g: GameState, adj: Adjacency, sum: number): Map<string, number> {
+  const out = new Map<string, number>();
+  if (sum === 7) return out;
+  for (const hex of Object.values(g.hexes)) {
+    if (hex.number !== sum || hex.robber) continue;
+    if (!TERRAIN_RESOURCE[hex.terrain]) continue;
+    for (const [vid, hexes] of adj.vertexHexes) {
+      if (!hexes.includes(hex.id)) continue;
+      const b = g.vertices[vid]?.building;
+      if (!b) continue;
+      const uid = g.order.find((u) => g.players[u].color === b.owner);
+      if (!uid) continue;
+      out.set(uid, (out.get(uid) ?? 0) + (b.type === "city" ? 2 : 1));
+    }
+  }
+  return out;
+}
+
+/** Picks a dice sum with weights that (a) pull cumulative counts toward the
+ *  real 2d6 distribution and (b) gently favour players who have produced the
+ *  least so far, then splits it into a plausible white+red pair. */
+function chooseBalancedRoll(
+  g: GameState,
+  adj: Adjacency
+): { white: number; red: number; sum: number } {
+  const counts = g.rollCounts ?? {};
+  let totalRolls = 0;
+  for (let n = 2; n <= 12; n++) totalRolls += counts[n] ?? 0;
+
+  const tally = g.productionTally ?? {};
+  const produced = g.order.map((u) => tally[u] ?? 0);
+  const avg = produced.length ? produced.reduce((a, b) => a + b, 0) / produced.length : 0;
+  const behind: Record<string, number> = {};
+  for (const u of g.order) behind[u] = Math.max(0, avg - (tally[u] ?? 0));
+
+  const sums: number[] = [];
+  const weights: number[] = [];
+  for (let n = 2; n <= 12; n++) {
+    const p0 = SUM_FREQ[n] / SUM_TOTAL;
+    const expected = (totalRolls + 1) * p0;
+    const actual = counts[n] ?? 0;
+    const deficit = (expected - actual) / (expected + 1); // >0 when under-rolled
+    const bell = Math.max(0.15, 1 + BELL_K * deficit);
+
+    let fairScore = 0;
+    for (const [uid, amt] of benefitBySum(g, adj, n)) fairScore += amt * (behind[uid] ?? 0);
+    const fair = Math.max(0.4, 1 + FAIR_K * (fairScore / (avg + 1)));
+
+    sums.push(n);
+    weights.push(p0 * bell * fair);
+  }
+
+  const total = weights.reduce((a, b) => a + b, 0);
+  let r = Math.random() * total;
+  let sum = 7;
+  for (let i = 0; i < sums.length; i++) {
+    r -= weights[i];
+    if (r <= 0) {
+      sum = sums[i];
+      break;
+    }
+  }
+
+  const combos: Array<[number, number]> = [];
+  for (let w = 1; w <= 6; w++) {
+    const rd = sum - w;
+    if (rd >= 1 && rd <= 6) combos.push([w, rd]);
+  }
+  const [white, red] = combos[Math.floor(Math.random() * combos.length)];
+  return { white, red, sum };
 }
 
 function doRoll(g: GameState, adj: Adjacency, uid: string): void {
@@ -314,12 +392,15 @@ function doRoll(g: GameState, adj: Adjacency, uid: string): void {
     g.alchemistDice = undefined;
     log(g, `${g.players[uid].name} used the Alchemist to set the dice.`);
   } else {
-    white = d6();
-    red = d6();
+    const roll = chooseBalancedRoll(g, adj);
+    white = roll.white;
+    red = roll.red;
   }
   const event = rollEventDie();
   g.lastRoll = { white, red, event };
   const sum = white + red;
+  if (!g.rollCounts) g.rollCounts = {};
+  g.rollCounts[sum] = (g.rollCounts[sum] ?? 0) + 1;
   log(g, `${g.players[uid].name} rolled ${white}+${red}=${sum} (event: ${event}).`);
 
   // 1) Event die first (barbarians / progress cards).
@@ -390,8 +471,10 @@ function produce(g: GameState, adj: Adjacency, sum: number): void {
       const ownerUid = g.order.find((u) => g.players[u].color === b.owner);
       if (!ownerUid) continue;
       const p = g.players[ownerUid];
+      const tally = g.productionTally ?? (g.productionTally = {});
       if (b.type === "settlement") {
         bagAdd(p, res, 1);
+        tally[ownerUid] = (tally[ownerUid] ?? 0) + 1;
       } else {
         // City: commodity terrains give 1 resource + 1 commodity; others give 2.
         if (commodity) {
@@ -400,6 +483,7 @@ function produce(g: GameState, adj: Adjacency, sum: number): void {
         } else {
           bagAdd(p, res, 2);
         }
+        tally[ownerUid] = (tally[ownerUid] ?? 0) + 2;
       }
     }
   }

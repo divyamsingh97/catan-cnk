@@ -16,6 +16,7 @@ import {
 import { renderBoard, COLOR_FILL } from "./board";
 import { buildAdjacency } from "../game/graph";
 import { el, mount } from "./dom";
+import { iconCount, iconEl } from "./icons";
 
 type Intent = null | "road" | "settlement" | "city" | "wall" | "knight";
 
@@ -66,6 +67,8 @@ export function gameScreen(
 
   let current: GameState | null = null;
   let intent: Intent = null;
+  // Previous city-improvement levels (for the flip animation when one unlocks).
+  let prevLevels: Record<Discipline, number> | null = null;
   // A knight selected for a board action (move/displace or chase the robber).
   let knightAction: { knightId: string; mode: "move" | "chase" } | null = null;
   let errorMsg = "";
@@ -554,7 +557,7 @@ export function gameScreen(
           })
         );
         parts.push(renderProgress(g));
-        parts.push(improvementsCard(g.players[me.uid], dispatch));
+        parts.push(tracksCard(g.players[me.uid], prevLevels, dispatch));
         parts.push(knightsPanel(g));
         parts.push(
           tradeCard(
@@ -594,6 +597,8 @@ export function gameScreen(
     }
 
     mount(sidebar, ...parts);
+    // Snapshot improvement levels so the next render can flip newly-unlocked tiles.
+    prevLevels = { ...g.players[me.uid].improvements };
   };
 
   const unsub: Unsubscribe = watchGame(gameId, (g) => {
@@ -655,25 +660,115 @@ function buildCard(intent: Intent, toggle: (i: Intent) => void): HTMLElement {
   ]);
 }
 
-function improvementsCard(p: PlayerState, dispatch: (a: Action) => void): HTMLElement {
+/** Cities & Knights city-improvement tracks: building names + level-3 ability. */
+const TRACK: Record<
+  Discipline,
+  { label: string; color: string; levels: { name: string; ability?: string }[] }
+> = {
+  trade: {
+    label: "Trade",
+    color: "#c45ba0",
+    levels: [
+      { name: "Market" },
+      { name: "Trading House" },
+      { name: "Merchant Guild", ability: "Trade any one kind 2:1 with the bank" },
+      { name: "Bank", ability: "Metropolis eligible (+2 VP)" },
+      { name: "Great Guild Hall", ability: "Trade metropolis secured" }
+    ]
+  },
+  politics: {
+    label: "Politics",
+    color: "#d8a93a",
+    levels: [
+      { name: "Town Hall" },
+      { name: "Church" },
+      { name: "Fortress", ability: "Promote knights to Mighty (rank 3)" },
+      { name: "Cathedral", ability: "Metropolis eligible (+2 VP)" },
+      { name: "Great Cathedral", ability: "Politics metropolis secured" }
+    ]
+  },
+  science: {
+    label: "Science",
+    color: "#6aa0d8",
+    levels: [
+      { name: "Abbey" },
+      { name: "Library" },
+      { name: "Aqueduct", ability: "Produced nothing on a roll? Take 1 resource" },
+      { name: "Theater", ability: "Metropolis eligible (+2 VP)" },
+      { name: "University", ability: "Science metropolis secured" }
+    ]
+  }
+};
+
+function tracksCard(
+  p: PlayerState,
+  prev: Record<Discipline, number> | null,
+  dispatch: (a: Action) => void
+): HTMLElement {
   const disciplines: Discipline[] = ["trade", "politics", "science"];
-  return el("div", { class: "card col", style: "gap:6px" }, [
+  return el("div", { class: "card col", style: "gap:12px" }, [
     el("strong", {}, ["City improvements"]),
     ...disciplines.map((d) => {
+      const meta = TRACK[d];
       const lvl = p.improvements[d];
       const com = DISCIPLINE_COMMODITY[d];
       const cost = improvementCost(lvl + 1);
-      return el("div", { class: "row spread" }, [
-        el("span", {}, [`${d} L${lvl}`]),
+      const owned = !!p.metropolis[d];
+
+      const header = el("div", { class: "row spread" }, [
+        el("div", { class: "row", style: "gap:6px;align-items:center" }, [
+          iconEl(com, 16),
+          el("span", { class: "track-name" }, [meta.label]),
+          owned ? el("span", { class: "metro-badge", title: "Metropolis (+2 VP)" }, ["🏛"]) : el("span")
+        ]),
         el(
           "button",
           {
+            class: "improve-btn",
             disabled: lvl >= 5 || p.commodities[com] < cost,
             onclick: () => dispatch({ type: "buyImprovement", discipline: d })
           },
-          [lvl >= 5 ? "max" : `+1 (${cost} ${com})`]
+          [lvl >= 5 ? "Max" : `+1 · ${cost}`]
         )
       ]);
+
+      const tiles = el(
+        "div",
+        { class: "track" },
+        meta.levels.map((lv, i) => {
+          const level = i + 1;
+          const unlocked = lvl >= level;
+          const justUnlocked = unlocked && prev != null && (prev[d] ?? 0) < level;
+          const cls = [
+            "track-tile",
+            unlocked ? "unlocked" : "locked",
+            level >= 4 ? "metro" : "",
+            justUnlocked ? "flip-in" : ""
+          ]
+            .filter(Boolean)
+            .join(" ");
+          return el("div", { class: cls, title: lv.ability ?? lv.name }, [
+            el("div", { class: "track-tile-inner" }, [
+              el("div", { class: "track-tile-face track-tile-back" }, [String(level)]),
+              el(
+                "div",
+                { class: "track-tile-face track-tile-front", style: `--tc:${meta.color}` },
+                [
+                  el("div", { class: "tile-lvl" }, [`L${level}`]),
+                  el("div", { class: "tile-name" }, [lv.name])
+                ]
+              )
+            ])
+          ]);
+        })
+      );
+
+      const ability = lvl >= 1 ? meta.levels[Math.min(lvl, 5) - 1]?.ability : undefined;
+      const abilityEl = ability
+        ? el("div", { class: "track-ability muted" }, [`✦ ${ability}`])
+        : el("span");
+
+      return el("div", { class: "track-block col", style: "gap:5px" }, [header, tiles, abilityEl]);
     })
   ]);
 }
@@ -773,26 +868,19 @@ function discardCard(
 }
 
 function handCard(p: PlayerState): HTMLElement {
-  const chip = (label: string, n: number, color: string) =>
-    el("div", { class: "row", style: "gap:4px" }, [
-      el("span", {
-        style: `width:10px;height:10px;border-radius:2px;background:${color};display:inline-block`
-      }),
-      el("span", {}, [`${label} ${n}`])
-    ]);
   return el("div", { class: "card col", style: "gap:6px" }, [
     el("strong", {}, ["Your hand"]),
-    el("div", { class: "row", style: "gap:10px;flex-wrap:wrap" }, [
-      chip("brick", p.resources.brick, "#c45a3a"),
-      chip("wood", p.resources.wood, "#2f8f4e"),
-      chip("wheat", p.resources.wheat, "#e7c24a"),
-      chip("sheep", p.resources.sheep, "#8fd14f"),
-      chip("ore", p.resources.ore, "#7d8aa0")
+    el("div", { class: "row hand-row" }, [
+      iconCount("brick", p.resources.brick),
+      iconCount("wood", p.resources.wood),
+      iconCount("wheat", p.resources.wheat),
+      iconCount("sheep", p.resources.sheep),
+      iconCount("ore", p.resources.ore)
     ]),
-    el("div", { class: "row", style: "gap:10px;flex-wrap:wrap" }, [
-      chip("cloth", p.commodities.cloth, "#c45ba0"),
-      chip("coin", p.commodities.coin, "#d8a93a"),
-      chip("paper", p.commodities.paper, "#6aa0d8")
+    el("div", { class: "row hand-row" }, [
+      iconCount("cloth", p.commodities.cloth),
+      iconCount("coin", p.commodities.coin),
+      iconCount("paper", p.commodities.paper)
     ]),
     p.progressCards.length
       ? el("div", { class: "muted", style: "font-size:.85rem" }, [
