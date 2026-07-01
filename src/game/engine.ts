@@ -162,6 +162,11 @@ export function applyAction(state: GameState, action: Action, uid: string): Game
 
   recomputeVictoryPoints(g);
   checkWinner(g);
+  // Reward staying active: each action the current player takes during their
+  // own turn nudges their clock forward a little (capped at a full turn).
+  if (action.type !== "endTurn" && action.type !== "timeout") {
+    bumpTurnDeadline(g, uid);
+  }
   return g;
 }
 
@@ -1189,6 +1194,22 @@ function endTurnInternal(g: GameState): void {
 /** (Re)starts the turn clock for the active player, if a limit is set. */
 function resetTurnDeadline(g: GameState): void {
   g.turnDeadline = g.turnTimer > 0 ? Date.now() + g.turnTimer * 1000 : undefined;
+}
+
+/** Fraction of the full turn length added to the clock per action. */
+const TURN_BONUS_FRACTION = 0.1;
+
+/**
+ * Extends the active player's turn deadline by a small percentage of the full
+ * turn length whenever they take an action, so an engaged player isn't cut off
+ * mid-move. The remaining time is capped at one full turn to prevent stalling.
+ */
+function bumpTurnDeadline(g: GameState, uid: string): void {
+  if (g.phase !== "play" || g.turnTimer <= 0 || !g.turnDeadline) return;
+  if (g.order[g.current] !== uid) return; // only the active player's own actions
+  const bonusMs = g.turnTimer * 1000 * TURN_BONUS_FRACTION;
+  const cap = Date.now() + g.turnTimer * 1000;
+  g.turnDeadline = Math.min(g.turnDeadline + bonusMs, cap);
 }
 
 /**
