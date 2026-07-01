@@ -1,5 +1,5 @@
 import { hexCorners, hexToPixel } from "../game/hex";
-import { type GameState, type Hex } from "../game/types";
+import { type GameState, type Hex, type Knight } from "../game/types";
 
 const NS = "http://www.w3.org/2000/svg";
 
@@ -131,6 +131,12 @@ export function renderBoard(g: GameState, cb: BoardCallbacks = {}): SVGSVGElemen
     }
     if (cb.onVertexClick) node.addEventListener("click", () => cb.onVertexClick!(v.id));
     svg.appendChild(node);
+  }
+
+  // ---- Knights ----
+  for (const k of Object.values(g.knights)) {
+    const v = g.vertices[k.vertex];
+    if (v) drawKnight(svg, v.x, v.y, k);
   }
 
   return svg as SVGSVGElement;
@@ -265,6 +271,49 @@ function drawHex(
     pawn.append(body, head);
     svg.appendChild(pawn);
   }
+}
+
+/** Draws a knight marker at a vertex: owner-coloured disc with a knight glyph,
+ *  rank pips below, and a gold ring when active. */
+function drawKnight(svg: SVGSVGElement, x: number, y: number, k: Knight): void {
+  const group = document.createElementNS(NS, "g");
+  group.style.pointerEvents = "none"; // let clicks reach the vertex hit target
+
+  const base = document.createElementNS(NS, "circle");
+  base.setAttribute("cx", String(x));
+  base.setAttribute("cy", String(y));
+  base.setAttribute("r", "11");
+  base.setAttribute("fill", COLOR_FILL[k.owner] ?? "#888");
+  base.setAttribute("stroke", k.active ? "#ffd24a" : "#00000088");
+  base.setAttribute("stroke-width", k.active ? "2.5" : "1.5");
+  if (!k.active) base.setAttribute("stroke-dasharray", "3 2");
+  base.setAttribute("opacity", k.active ? "1" : "0.75");
+  base.setAttribute("filter", "url(#tokenShadow)");
+  group.appendChild(base);
+
+  const glyph = document.createElementNS(NS, "text");
+  glyph.setAttribute("x", String(x));
+  glyph.setAttribute("y", String(y - 1));
+  glyph.setAttribute("class", "knight-glyph");
+  glyph.setAttribute("fill", k.owner === "white" ? "#1a2440" : "#ffffff");
+  glyph.textContent = "\u265E"; // ♞ chess knight
+  group.appendChild(glyph);
+
+  // Rank pips (1 = basic, 2 = strong, 3 = mighty)
+  const gap = 5;
+  const startX = x - ((k.rank - 1) * gap) / 2;
+  for (let i = 0; i < k.rank; i++) {
+    const pip = document.createElementNS(NS, "circle");
+    pip.setAttribute("cx", String(startX + i * gap));
+    pip.setAttribute("cy", String(y + 13));
+    pip.setAttribute("r", "2");
+    pip.setAttribute("fill", COLOR_FILL[k.owner] ?? "#888");
+    pip.setAttribute("stroke", "#00000066");
+    pip.setAttribute("stroke-width", "0.6");
+    group.appendChild(pip);
+  }
+
+  svg.appendChild(group);
 }
 
 export { COLOR_FILL };

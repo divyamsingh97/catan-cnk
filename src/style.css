@@ -302,3 +302,10 @@ a {
   pointer-events: none;
   opacity: 0.92;
 }
+.knight-glyph {
+  font-size: 13px;
+  font-weight: 700;
+  text-anchor: middle;
+  dominant-baseline: central;
+  pointer-events: none;
+}
