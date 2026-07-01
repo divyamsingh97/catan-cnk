@@ -1,6 +1,6 @@
 // Minimal offline-first service worker for the app shell.
 // Network-first for navigation (so updates show up), cache-first for assets.
-const CACHE = "catan-cnk-v2";
+const CACHE = "catan-cnk-v3";
 
 self.addEventListener("install", (event) => {
   self.skipWaiting();
