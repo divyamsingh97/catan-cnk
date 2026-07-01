@@ -101,25 +101,66 @@ export function renderBoard(g: GameState, cb: BoardCallbacks = {}): SVGSVGElemen
   for (const v of Object.values(g.vertices)) {
     const node = document.createElementNS(NS, "g");
     if (v.building) {
-      const shape = document.createElementNS(
-        NS,
-        v.building.type === "city" ? "rect" : "circle"
-      );
+      const fill = COLOR_FILL[v.building.owner];
       if (v.building.type === "city") {
-        shape.setAttribute("x", String(v.x - 9));
-        shape.setAttribute("y", String(v.y - 9));
-        shape.setAttribute("width", "18");
-        shape.setAttribute("height", "18");
-        shape.setAttribute("rx", "3");
+        // City: a taller castle silhouette with a crenellated (battlement) top.
+        const x = v.x;
+        const y = v.y;
+        const wall = document.createElementNS(NS, "path");
+        wall.setAttribute(
+          "d",
+          [
+            `M ${x - 11},${y + 9}`,
+            `L ${x - 11},${y - 9}`,
+            `L ${x - 6.6},${y - 9}`,
+            `L ${x - 6.6},${y - 3}`,
+            `L ${x - 2.2},${y - 3}`,
+            `L ${x - 2.2},${y - 9}`,
+            `L ${x + 2.2},${y - 9}`,
+            `L ${x + 2.2},${y - 3}`,
+            `L ${x + 6.6},${y - 3}`,
+            `L ${x + 6.6},${y - 9}`,
+            `L ${x + 11},${y - 9}`,
+            `L ${x + 11},${y + 9}`,
+            "Z"
+          ].join(" ")
+        );
+        wall.setAttribute("fill", fill);
+        wall.setAttribute("stroke", "#0009");
+        wall.setAttribute("stroke-width", "2");
+        wall.setAttribute("stroke-linejoin", "round");
+        node.appendChild(wall);
+        // Door for extra readability.
+        const door = document.createElementNS(NS, "rect");
+        door.setAttribute("x", String(x - 2.6));
+        door.setAttribute("y", String(y + 1));
+        door.setAttribute("width", "5.2");
+        door.setAttribute("height", "8");
+        door.setAttribute("rx", "2.4");
+        door.setAttribute("fill", "#0007");
+        node.appendChild(door);
       } else {
-        shape.setAttribute("cx", String(v.x));
-        shape.setAttribute("cy", String(v.y));
-        shape.setAttribute("r", "9");
+        // Settlement: a small house with a pitched roof.
+        const x = v.x;
+        const y = v.y;
+        const house = document.createElementNS(NS, "path");
+        house.setAttribute(
+          "d",
+          [
+            `M ${x},${y - 10}`,
+            `L ${x + 8},${y - 3}`,
+            `L ${x + 8},${y + 8}`,
+            `L ${x - 8},${y + 8}`,
+            `L ${x - 8},${y - 3}`,
+            "Z"
+          ].join(" ")
+        );
+        house.setAttribute("fill", fill);
+        house.setAttribute("stroke", "#0009");
+        house.setAttribute("stroke-width", "2");
+        house.setAttribute("stroke-linejoin", "round");
+        node.appendChild(house);
       }
-      shape.setAttribute("fill", COLOR_FILL[v.building.owner]);
-      shape.setAttribute("stroke", "#0008");
-      shape.setAttribute("stroke-width", "2");
-      node.appendChild(shape);
     } else if (cb.onVertexClick) {
       const hit = document.createElementNS(NS, "circle");
       hit.setAttribute("cx", String(v.x));
