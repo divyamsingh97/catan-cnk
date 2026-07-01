@@ -928,8 +928,36 @@ function tickerCard(g: GameState): HTMLElement {
     ...g.ticker
       .slice(-25)
       .reverse()
-      .map((t) => el("div", { class: "muted", style: "font-size:.8rem" }, [t]))
+      .map((t) =>
+        el("div", { class: "muted log-line", style: "font-size:.8rem" }, renderLogLine(t))
+      )
   ]);
+}
+
+const LOG_ICONS: (Resource | Commodity)[] = [
+  "brick",
+  "wood",
+  "wheat",
+  "sheep",
+  "ore",
+  "cloth",
+  "coin",
+  "paper"
+];
+
+/** Split a log string on resource/commodity words and inline their icons. */
+function renderLogLine(text: string): (HTMLElement | string)[] {
+  const re = new RegExp(`\\b(${LOG_ICONS.join("|")})\\b`, "gi");
+  const out: (HTMLElement | string)[] = [];
+  let last = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text))) {
+    if (m.index > last) out.push(text.slice(last, m.index));
+    out.push(iconEl(m[1].toLowerCase() as Resource | Commodity, 14));
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) out.push(text.slice(last));
+  return out;
 }
 
 // ---- trade helpers ----

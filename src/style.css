@@ -339,6 +339,10 @@ a {
   gap: 6px;
   flex-wrap: wrap;
 }
+.log-line .ico {
+  vertical-align: -2px;
+  margin: 0 1px;
+}
 
 /* ---- City-improvement flip tracks ---- */
 .track-block {

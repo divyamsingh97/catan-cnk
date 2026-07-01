@@ -458,6 +458,11 @@ function giveProgressCard(g: GameState, uid: string, card: ProgressCard): void {
 }
 
 function produce(g: GameState, adj: Adjacency, sum: number): void {
+  // Per-player gains this roll, for the log (e.g. "Alice: +1 sheep, +1 ore").
+  const gains: Record<string, Record<string, number>> = {};
+  const addGain = (uid: string, kind: string, n: number) => {
+    (gains[uid] ??= {})[kind] = (gains[uid][kind] ?? 0) + n;
+  };
   for (const hex of Object.values(g.hexes)) {
     if (hex.number !== sum || hex.robber) continue;
     const res = TERRAIN_RESOURCE[hex.terrain];
@@ -474,20 +479,34 @@ function produce(g: GameState, adj: Adjacency, sum: number): void {
       const tally = g.productionTally ?? (g.productionTally = {});
       if (b.type === "settlement") {
         bagAdd(p, res, 1);
+        addGain(ownerUid, res, 1);
         tally[ownerUid] = (tally[ownerUid] ?? 0) + 1;
       } else {
         // City: commodity terrains give 1 resource + 1 commodity; others give 2.
         if (commodity) {
           bagAdd(p, res, 1);
           bagAdd(p, commodity, 1);
+          addGain(ownerUid, res, 1);
+          addGain(ownerUid, commodity, 1);
         } else {
           bagAdd(p, res, 2);
+          addGain(ownerUid, res, 2);
         }
         tally[ownerUid] = (tally[ownerUid] ?? 0) + 2;
       }
     }
   }
-  log(g, `Resources produced for ${sum}.`);
+  const lines = g.order
+    .filter((u) => gains[u])
+    .map((u) => {
+      const parts = Object.entries(gains[u]).map(([kind, n]) => `+${n} ${kind}`);
+      return `${g.players[u].name}: ${parts.join(", ")}`;
+    });
+  if (lines.length) {
+    for (const line of lines) log(g, line);
+  } else {
+    log(g, `No production for ${sum}.`);
+  }
 }
 
 /** Grant production for a single vertex (used for the 2nd setup settlement). */
