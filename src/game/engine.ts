@@ -520,9 +520,9 @@ function produce(g: GameState, adj: Adjacency, sum: number): void {
   }
 }
 
-/** Grant starting production for a single vertex (the 2nd setup placement).
- *  A city yields city-level output: 2 resources, or 1 resource + 1 commodity
- *  on commodity terrains (pasture/forest/mountains). A settlement yields 1. */
+/** Grant starting production for the 2nd setup placement (the city). Per
+ *  Cities & Knights, the initial placement yields only RESOURCES (one per
+ *  adjacent hex) — commodities are produced only later, on dice rolls. */
 function grantVertexProduction(g: GameState, adj: Adjacency, vid: string): void {
   const b = g.vertices[vid]?.building;
   if (!b) return;
@@ -530,20 +530,8 @@ function grantVertexProduction(g: GameState, adj: Adjacency, vid: string): void 
   if (!ownerUid) return;
   const p = g.players[ownerUid];
   for (const hexId of adj.vertexHexes.get(vid) ?? []) {
-    const terrain = g.hexes[hexId].terrain;
-    const res = TERRAIN_RESOURCE[terrain];
-    if (!res) continue;
-    if (b.type === "city") {
-      const commodity = TERRAIN_COMMODITY[terrain];
-      if (commodity) {
-        bagAdd(p, res, 1);
-        bagAdd(p, commodity, 1);
-      } else {
-        bagAdd(p, res, 2);
-      }
-    } else {
-      bagAdd(p, res, 1);
-    }
+    const res = TERRAIN_RESOURCE[g.hexes[hexId].terrain];
+    if (res) bagAdd(p, res, 1);
   }
 }
 

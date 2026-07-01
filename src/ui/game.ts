@@ -640,7 +640,7 @@ function statusCard(g: GameState, intent: Intent): HTMLElement {
       ? el("div", { class: "muted", style: "font-size:.85rem" }, ["Place your first settlement."])
       : g.phase === "setup2" && g.step === "setupSettlement"
         ? el("div", { style: "color:var(--accent);font-size:.85rem" }, [
-            "Place your starting city (grants resources + commodities)."
+            "Place your starting city (grants resources; commodities come later)."
           ])
         : el("span"),
     intent
