@@ -239,14 +239,20 @@ function doSetupSettlement(g: GameState, adj: Adjacency, uid: string, vid: strin
     if (g.vertices[n]?.building) throw new RuleError("Too close to another building.");
   }
   const p = g.players[uid];
+  // Cities & Knights: the FIRST setup placement is a settlement, the SECOND
+  // (in setup2) is a city — which also yields the starting production.
+  if (g.phase === "setup2") {
+    v.building = { type: "city", owner: p.color };
+    p.pieces.cities--;
+    g.lastSetupVertex = vid;
+    grantVertexProduction(g, adj, vid);
+    g.step = "setupRoad";
+    log(g, `${p.name} placed a city.`);
+    return;
+  }
   v.building = { type: "settlement", owner: p.color };
   p.pieces.settlements--;
   g.lastSetupVertex = vid;
-
-  // Second settlement yields starting resources.
-  if (g.phase === "setup2") {
-    grantVertexProduction(g, adj, vid);
-  }
   g.step = "setupRoad";
   log(g, `${p.name} placed a settlement.`);
 }
@@ -514,16 +520,30 @@ function produce(g: GameState, adj: Adjacency, sum: number): void {
   }
 }
 
-/** Grant production for a single vertex (used for the 2nd setup settlement). */
+/** Grant starting production for a single vertex (the 2nd setup placement).
+ *  A city yields city-level output: 2 resources, or 1 resource + 1 commodity
+ *  on commodity terrains (pasture/forest/mountains). A settlement yields 1. */
 function grantVertexProduction(g: GameState, adj: Adjacency, vid: string): void {
-  const ownerColor = g.vertices[vid]?.building?.owner;
-  if (!ownerColor) return;
-  const ownerUid = g.order.find((u) => g.players[u].color === ownerColor);
+  const b = g.vertices[vid]?.building;
+  if (!b) return;
+  const ownerUid = g.order.find((u) => g.players[u].color === b.owner);
   if (!ownerUid) return;
   const p = g.players[ownerUid];
   for (const hexId of adj.vertexHexes.get(vid) ?? []) {
-    const res = TERRAIN_RESOURCE[g.hexes[hexId].terrain];
-    if (res) bagAdd(p, res, 1);
+    const terrain = g.hexes[hexId].terrain;
+    const res = TERRAIN_RESOURCE[terrain];
+    if (!res) continue;
+    if (b.type === "city") {
+      const commodity = TERRAIN_COMMODITY[terrain];
+      if (commodity) {
+        bagAdd(p, res, 1);
+        bagAdd(p, commodity, 1);
+      } else {
+        bagAdd(p, res, 2);
+      }
+    } else {
+      bagAdd(p, res, 1);
+    }
   }
 }
 

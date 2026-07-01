@@ -636,6 +636,13 @@ function statusCard(g: GameState, intent: Intent): HTMLElement {
     el("div", { class: "muted", style: "font-size:.85rem" }, [
       `Barbarians ${g.barbarians.position}/7 • Last roll ${roll}`
     ]),
+    g.phase === "setup1" && g.step === "setupSettlement"
+      ? el("div", { class: "muted", style: "font-size:.85rem" }, ["Place your first settlement."])
+      : g.phase === "setup2" && g.step === "setupSettlement"
+        ? el("div", { style: "color:var(--accent);font-size:.85rem" }, [
+            "Place your starting city (grants resources + commodities)."
+          ])
+        : el("span"),
     intent
       ? el("div", { style: "color:var(--accent)" }, [`Placing: ${intent} (tap board)`])
       : el("span")
