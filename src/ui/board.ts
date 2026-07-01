@@ -1,5 +1,5 @@
-import { hexCorners, hexToPixel } from "../game/hex";
-import { type GameState, type Hex, type Knight } from "../game/types";
+import { hexCorners, hexToPixel, HEX_SIZE } from "../game/hex";
+import { type GameState, type Hex, type Knight, type Resource } from "../game/types";
 
 const NS = "http://www.w3.org/2000/svg";
 
@@ -65,7 +65,7 @@ export function renderBoard(g: GameState, cb: BoardCallbacks = {}): SVGSVGElemen
   const verts = Object.values(g.vertices);
   const xs = verts.map((v) => v.x);
   const ys = verts.map((v) => v.y);
-  const pad = 48;
+  const pad = 74;
   const minX = Math.min(...xs) - pad;
   const minY = Math.min(...ys) - pad;
   const w = Math.max(...xs) - minX + pad;
@@ -96,6 +96,9 @@ export function renderBoard(g: GameState, cb: BoardCallbacks = {}): SVGSVGElemen
     if (cb.onEdgeClick) line.addEventListener("click", () => cb.onEdgeClick!(e.id));
     svg.appendChild(line);
   }
+
+  // ---- Harbors / ports (drawn on the sea, connected to two coastal vertices) ----
+  drawHarbors(svg, verts, xs, ys);
 
   // ---- Vertices (settlements/cities + click targets) ----
   for (const v of Object.values(g.vertices)) {
@@ -181,6 +184,132 @@ export function renderBoard(g: GameState, cb: BoardCallbacks = {}): SVGSVGElemen
   }
 
   return svg as SVGSVGElement;
+}
+
+const HARBOR_EMOJI: Record<Resource, string> = {
+  brick: "🧱",
+  wood: "🌲",
+  wheat: "🌾",
+  sheep: "🐑",
+  ore: "⛰️"
+};
+
+/** Draws all harbors. Each harbor lives on two adjacent coastal vertices that
+ *  share the same `harbor` kind; we pair them, place a badge on the sea just
+ *  outside the coast, and connect it to both vertices with dock lines. */
+function drawHarbors(
+  svg: SVGSVGElement,
+  verts: { id: string; x: number; y: number; harbor?: Resource | "any" }[],
+  xs: number[],
+  ys: number[]
+): void {
+  const cx = xs.reduce((a, b) => a + b, 0) / xs.length;
+  const cy = ys.reduce((a, b) => a + b, 0) / ys.length;
+  const harborVerts = verts.filter((v) => v.harbor);
+  const used = new Set<string>();
+
+  for (const v of harborVerts) {
+    if (used.has(v.id)) continue;
+    used.add(v.id);
+    // Find the nearest same-kind coastal vertex to pair with (the other dock).
+    let partner: (typeof harborVerts)[number] | null = null;
+    let best = Infinity;
+    for (const u of harborVerts) {
+      if (used.has(u.id) || u.harbor !== v.harbor) continue;
+      const d = Math.hypot(u.x - v.x, u.y - v.y);
+      if (d < best) {
+        best = d;
+        partner = u;
+      }
+    }
+    if (partner && best <= HEX_SIZE * 1.3) used.add(partner.id);
+    else partner = null;
+
+    drawHarbor(svg, v, partner ?? v, cx, cy, v.harbor!);
+  }
+}
+
+function drawHarbor(
+  svg: SVGSVGElement,
+  a: { x: number; y: number },
+  b: { x: number; y: number },
+  cx: number,
+  cy: number,
+  kind: Resource | "any"
+): void {
+  const mx = (a.x + b.x) / 2;
+  const my = (a.y + b.y) / 2;
+  let dx = mx - cx;
+  let dy = my - cy;
+  const len = Math.hypot(dx, dy) || 1;
+  dx /= len;
+  dy /= len;
+  const bx = mx + dx * 30;
+  const by = my + dy * 30;
+
+  const group = document.createElementNS(NS, "g");
+  group.style.pointerEvents = "none";
+
+  // Dock lines from the badge to each coastal vertex.
+  const docks = a === b ? [a] : [a, b];
+  for (const p of docks) {
+    const line = document.createElementNS(NS, "line");
+    line.setAttribute("x1", String(bx));
+    line.setAttribute("y1", String(by));
+    line.setAttribute("x2", String(p.x));
+    line.setAttribute("y2", String(p.y));
+    line.setAttribute("stroke", "#b9d6f5");
+    line.setAttribute("stroke-width", "3");
+    line.setAttribute("stroke-linecap", "round");
+    line.setAttribute("stroke-dasharray", "1 6");
+    line.setAttribute("opacity", "0.75");
+    group.appendChild(line);
+  }
+
+  // Badge disc.
+  const disc = document.createElementNS(NS, "circle");
+  disc.setAttribute("cx", String(bx));
+  disc.setAttribute("cy", String(by));
+  disc.setAttribute("r", "15");
+  disc.setAttribute("fill", "#0d2947");
+  disc.setAttribute("stroke", "#b9d6f5");
+  disc.setAttribute("stroke-width", "2");
+  disc.setAttribute("filter", "url(#tokenShadow)");
+  group.appendChild(disc);
+
+  if (kind === "any") {
+    const t = document.createElementNS(NS, "text");
+    t.setAttribute("x", String(bx));
+    t.setAttribute("y", String(by));
+    t.setAttribute("text-anchor", "middle");
+    t.setAttribute("dominant-baseline", "central");
+    t.setAttribute("fill", "#eaf3ff");
+    t.setAttribute("font-size", "11");
+    t.setAttribute("font-weight", "800");
+    t.textContent = "3:1";
+    group.appendChild(t);
+  } else {
+    const emoji = document.createElementNS(NS, "text");
+    emoji.setAttribute("x", String(bx));
+    emoji.setAttribute("y", String(by - 4));
+    emoji.setAttribute("text-anchor", "middle");
+    emoji.setAttribute("dominant-baseline", "central");
+    emoji.setAttribute("font-size", "13");
+    emoji.textContent = HARBOR_EMOJI[kind];
+    group.appendChild(emoji);
+    const ratio = document.createElementNS(NS, "text");
+    ratio.setAttribute("x", String(bx));
+    ratio.setAttribute("y", String(by + 8));
+    ratio.setAttribute("text-anchor", "middle");
+    ratio.setAttribute("dominant-baseline", "central");
+    ratio.setAttribute("fill", "#eaf3ff");
+    ratio.setAttribute("font-size", "8");
+    ratio.setAttribute("font-weight", "800");
+    ratio.textContent = "2:1";
+    group.appendChild(ratio);
+  }
+
+  svg.appendChild(group);
 }
 
 /** Builds the <defs> block with one radial gradient per terrain plus a soft
